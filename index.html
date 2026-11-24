@@ -66,11 +66,11 @@ button:disabled{opacity:.4}
 /* main */
 #main{flex:1;display:flex;min-height:0;position:relative}
 #heads{width:176px;flex:none;background:var(--bg2);border-right:3px solid #000;overflow:hidden;position:relative}
-#headsInner{position:absolute;left:0;right:0;top:98px}
+#headsInner{position:absolute;left:0;right:0;top:114px}
 #headTop{position:absolute;left:0;right:0;top:0;z-index:2;background:var(--bg2)}
 .th.mh{height:64px;background:#2f2a1c;border-bottom:3px solid #000}.th.mh.sel{background:#4a4226}.th.mh .nm{color:#f2c14e;letter-spacing:.12em}
 .th.mh .row button{height:24px;font-size:10px}.th.mh .bd{padding:4px 7px;gap:3px}.th.mh .nm{font-size:11px;line-height:14px}
-#rulerPad{height:34px;background:var(--ink);border-bottom:2px solid #000;display:flex;align-items:center;justify-content:center;gap:6px}
+#rulerPad{height:50px;background:var(--ink);border-bottom:2px solid #000;display:flex;align-items:center;justify-content:center;gap:6px}
 #rulerPad button{height:24px;font-size:10px;padding:0 8px;box-shadow:none}
 .th{height:92px;border-bottom:2px solid #11181d;display:flex;position:relative;background:var(--bg2)}
 .th.sel{background:#32444f}
@@ -191,7 +191,7 @@ input.txt{font:600 15px var(--sans);border:2px solid var(--ink);border-radius:7p
 </div>
 <div id="drawer">
   <div id="dtabs">
-    <div class="seg" id="dSeg"><button data-v="mix">MIX</button><button data-v="fx">FX</button><button data-v="item">ITEM</button></div>
+    <div class="seg" id="dSeg"><button data-v="mix">MIX</button><button data-v="fx">FX</button><button data-v="item">ITEM</button><button data-v="sect">SECTIONS</button></div>
     <span class="tlabel" id="dTitle"></span>
     <div class="spacer"></div>
     <button id="dToggle">HIDE</button>
@@ -202,7 +202,7 @@ input.txt{font:600 15px var(--sans);border:2px solid var(--ink);border-radius:7p
 <div id="toast"></div>
 <script>
 'use strict';
-const VERSION='0.2';
+const VERSION='0.3';
 /* ============================ helpers ============================ */
 const $=s=>document.querySelector(s);
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
@@ -238,7 +238,7 @@ function defaultFx(){return{eq:{on:false,hp:20,low:0,mid:0,midF:900,high:0},comp
   echo:{on:false,time:3,fb:35,tone:45,mix:25},haze:{on:false,size:55,tone:45,motion:40,mix:35}}}
 function newTrack(i){return{id:uid(),name:'Track '+(i+1),color:COLORS[i%COLORS.length],vol:0,pan:0,mute:false,solo:false,arm:false,input:'1',fx:defaultFx(),items:[]}}
 function newProject(name){const p={id:uid(),name:name||('Sketch '+dateStr()),v:VERSION,bpm:90,bpb:4,created:Date.now(),modified:Date.now(),
-  loop:{on:false,start:0,end:0},cursor:0,click:false,countIn:true,snap:'beat',zoom:60,scrollX:0,master:{vol:0,limit:true,fx:defaultFx()},tracks:[],clips:{}};
+  loop:{on:false,start:0,end:0},cursor:0,click:false,countIn:true,snap:'beat',zoom:60,scrollX:0,master:{vol:0,limit:true,fx:defaultFx()},markers:[],regions:[],tracks:[],clips:{}};
   for(let i=0;i<4;i++)p.tracks.push(newTrack(i));p.tracks[0].arm=true;p.loop.end=4*p.bpb*60/p.bpm;return p}
 let proj=null;
 const AUD=new Map(); // clipId -> {buf, peaks}
@@ -256,7 +256,7 @@ function projEnd(){let e=0;for(const t of proj.tracks)for(const it of t.items)e=
 
 /* undo */
 let undoS=[],redoS=[];
-function snap(){return JSON.stringify({bpm:proj.bpm,bpb:proj.bpb,loop:proj.loop,tracks:proj.tracks,master:proj.master})}
+function snap(){return JSON.stringify({bpm:proj.bpm,bpb:proj.bpb,loop:proj.loop,tracks:proj.tracks,master:proj.master,markers:proj.markers,regions:proj.regions})}
 function pushUndo(){undoS.push(snap());if(undoS.length>80)undoS.shift();redoS=[]}
 function restore(s){Object.assign(proj,JSON.parse(s));if(sel.item&&!findItem(sel.item))sel.item=null;if(sel.track!=='master'&&!trackById(sel.track))sel.track=proj.tracks[0]&&proj.tracks[0].id;
   syncEngine();renderHeads();renderDrawer();uiTransport();dirty();save();reschedule()}
@@ -466,7 +466,7 @@ async function finishRecording(){const r=P.rec;A.input.node.setRec(false);await 
 function updateRecBadge(){const b=$('#recBadge');const s=(Date.now()-P.rec.startedAt)/1000;b.textContent='REC '+fmtTime(s).replace(/\.\d$/,'')}
 
 /* ============================ timeline view ============================ */
-const RULER=34,TH=92,MH=64; // MH = pinned master lane
+const RULER=50,TH=92,MH=64; // MH = pinned master lane
 const view={scrollX:0,scrollY:0,w:0,h:0,dpr:1,need:true};
 const cv=$('#cv'),g2=cv.getContext('2d');
 function dirty(){view.need=true}
@@ -504,7 +504,13 @@ function draw(){
    if(P.playing){const v=Math.min(1,mPk);const mw=Math.min(240,W*.3);c.fillStyle='#0e1316';c.fillRect(W-mw-12,y+38,mw,8);c.fillStyle=v>0.89?'#d7263d':v>0.35?'#f2c14e':'#4fd1a5';c.fillRect(W-mw-12,y+38,mw*clamp((20*Math.log10(v||1e-9)+54)/54,0,1),8)}}
   // ruler
   c.fillStyle='#1c1a18';c.fillRect(0,0,W,RULER);c.fillStyle='#000';c.fillRect(0,RULER-2,W,2);
-  if(lp.end>lp.start){const a=tX(lp.start),b=tX(lp.end);c.fillStyle=lp.on?'#f2c14e':'#6b6250';c.fillRect(a,3,b-a,9);c.fillStyle='#1c1a18';c.font='800 9px -apple-system,sans-serif';if(b-a>40)c.fillText('LOOP',a+4,11)}
+  // sections band (regions + markers), y 2..18
+  c.font='800 10px -apple-system,sans-serif';
+  for(const g of proj.regions){const a=tX(g.start),b=tX(g.end);if(b<0||a>W)continue;rr(c,a+1,2,Math.max(3,b-a-2),15,4);c.fillStyle=g.color||'#7b8cde';c.fill();
+    c.save();c.beginPath();c.rect(a+1,2,Math.max(0,b-a-2),15);c.clip();c.fillStyle='#1c1a18';c.fillText(g.name||'',a+6,13);c.restore()}
+  for(const m of proj.markers){const x=Math.round(tX(m.pos))+.5;if(x<-80||x>W)continue;c.fillStyle=m.color||'#f4ecdb';c.fillRect(x,2,2,16);
+    const tw=c.measureText(m.name||'').width;rr(c,x+2,2,tw+10,13,3);c.fill();c.fillStyle='#1c1a18';c.fillText(m.name||'',x+7,12)}
+  if(lp.end>lp.start){const a=tX(lp.start),b=tX(lp.end);c.fillStyle=lp.on?'#f2c14e':'#6b6250';c.fillRect(a,21,b-a,7);c.fillStyle='#1c1a18';c.font='800 8px -apple-system,sans-serif';if(b-a>40)c.fillText('LOOP',a+4,28)}
   c.font='700 11px ui-monospace,Menlo,monospace';c.textBaseline='alphabetic';
   const barPx=bar*z();const every=barPx>=44?1:barPx>=22?2:barPx>=11?4:barPx>=5?8:16;
   for(let k=Math.max(0,Math.floor(t0/bar));k*bar<=t1;k++){const x=Math.round(tX(k*bar))+.5;c.strokeStyle='#8c8170';c.beginPath();c.moveTo(x,RULER-12);c.lineTo(x,RULER-2);c.stroke();
@@ -562,6 +568,7 @@ cv.addEventListener('pointerdown',e=>{if(!proj)return;cv.setPointerCapture(e.poi
   if(ptrs.size===2){const[a,b]=[...ptrs.values()];G={mode:'pinch',d0:Math.abs(a.x-b.x)+1,z0:proj.zoom,cx:(a.x+b.x)/2,tc:xT((a.x+b.x)/2)};return}
   if(ptrs.size>2)return;
   G={mode:null,x0:x,y0:y,moved:false,sx:view.scrollX,sy:view.scrollY,t0:xT(x)};
+  if(y<20){G.mode='sect';return}
   if(y<RULER){G.mode='ruler';return}
   const h=hitItem(x,y);G.hit=h;
   if(h.it&&h.it.id===sel.item){const it=h.it,ly=laneY(h.li)+5,hh=TH-12,xa=tX(it.pos),xb=tX(it.pos+it.len);
@@ -582,7 +589,7 @@ cv.addEventListener('pointermove',e=>{if(!G||!ptrs.has(e.pointerId))return;const
   if(!G.moved&&G.undo){undoS.push(G.undo);if(undoS.length>80)undoS.shift();redoS=[]}
   G.moved=true;const dt=dx/z();const it=G.it,o=G.orig;
   switch(G.mode){
-    case 'pan':view.scrollX=Math.max(0,G.sx-dt);view.scrollY=clamp(G.sy-dy,0,maxScrollY());syncHeadScroll();break;
+    case 'sect':case 'pan':view.scrollX=Math.max(0,G.sx-dt);view.scrollY=clamp(G.sy-dy,0,maxScrollY());syncHeadScroll();break;
     case 'ruler':{let a=snapT(Math.max(0,Math.min(G.t0,xT(x)))),b=snapT(Math.max(G.t0,xT(x)));if(b-a>0.02){proj.loop.start=Math.max(0,a);proj.loop.end=b;proj.loop.on=true;uiTransport()}break}
     case 'move':{let np=Math.max(0,o.pos+dt);np=snapT(np);if(proj.snap==='off'||!gridLen())np=Math.max(0,o.pos+dt);it.pos=Math.max(0,np);
       const li=clamp(Math.floor((y-RULER-MH+view.scrollY)/TH),0,proj.tracks.length-1);const nt=proj.tracks[li];if(nt&&nt!==G.t){G.t.items.splice(G.t.items.indexOf(it),1);nt.items.push(it);G.t=nt;sel.track=nt.id;renderHeads()}break}
@@ -595,10 +602,11 @@ cv.addEventListener('pointermove',e=>{if(!G||!ptrs.has(e.pointerId))return;const
 function endPtr(e){if(!ptrs.has(e.pointerId))return;ptrs.delete(e.pointerId);if(!G)return;
   if(G.mode==='pinch'){if(ptrs.size===0){G=null;proj.scrollX=view.scrollX;save()}return}
   if(!G.moved){// tap
-    if(G.mode==='ruler'){proj.cursor=Math.max(0,snapT(G.t0));if(P.playing&&!P.recording)startPlayback(proj.cursor,0)}
+    if(G.mode==='sect'){const s=sectionAt(G.x0);if(s)gotoSection(s,false);else{proj.cursor=Math.max(0,snapT(G.t0));if(P.playing&&!P.recording)startPlayback(proj.cursor,0)}}
+    else if(G.mode==='ruler'){proj.cursor=Math.max(0,snapT(G.t0));if(P.playing&&!P.recording)startPlayback(proj.cursor,0)}
     else{const h=G.hit;if(h&&h.it){sel.item=h.it.id;sel.track=h.t.id;proj.cursor=proj.snap==='off'?Math.max(0,G.t0):Math.max(0,snapT(G.t0));renderHeads();renderDrawer()}
       else{if(h&&h.master){sel.track='master';if(drawerTab==='item')drawerTab='fx'}else if(h&&h.t){sel.track=h.t.id}sel.item=null;proj.cursor=Math.max(0,snapT(G.t0));if(P.playing&&!P.recording)startPlayback(proj.cursor,0);renderHeads();renderDrawer()}}}
-  else if(G.mode!=='pan'){save();reschedule();if(drawerTab==='item')renderDrawer()}
+  else if(G.mode!=='pan'&&G.mode!=='sect'){save();reschedule();if(drawerTab==='item')renderDrawer()}
   else{proj.scrollX=view.scrollX}
   G=null;dirty();uiTransport();save()}
 cv.addEventListener('pointerup',endPtr);cv.addEventListener('pointercancel',endPtr);
@@ -610,6 +618,17 @@ function zoomFit(){const e=Math.max(projEnd(),barDur()*4);proj.zoom=clamp((view.
 
 /* ============================ editing ops ============================ */
 function selItem(){return sel.item?findItem(sel.item):null}
+/* sections: regions + markers */
+const SECT_COLORS=['#7b8cde','#2a9d8f','#e06c75','#f2c14e','#8bbf6a','#c97bd6','#5fb7d4','#f08a3c'];
+function sectionAt(x){const t=xT(x);let best=null;for(const m of proj.markers){const d=Math.abs(tX(m.pos)-x);if(d<14&&(!best||d<best.d))best={d,m}}if(best)return{marker:best.m};
+  for(const g of proj.regions)if(t>=g.start&&t<=g.end)return{region:g};return null}
+function gotoSection(s,loop){const g=s.region,m=s.marker;const pos=g?g.start:m.pos;
+  if(g&&(loop||proj.loop.on)){proj.loop.start=g.start;proj.loop.end=g.end;if(loop)proj.loop.on=true}
+  proj.cursor=pos;if(view.scrollX>pos||tX(pos)>view.w*0.8)view.scrollX=Math.max(0,pos-1);
+  if(P.playing&&!P.recording)startPlayback(pos,0);uiTransport();dirty();save();toast((g?g.name:m.name)||'Section')}
+function addMarker(){pushUndo();const n=proj.markers.length+1;proj.markers.push({id:'m'+uid(),name:'Marker '+n,pos:P.playing?nowSong():proj.cursor,color:'#f4ecdb'});proj.markers.sort((a,b)=>a.pos-b.pos);dirty();save();renderDrawer()}
+function addRegion(){pushUndo();let a,b;const lp=proj.loop;if(lp.end-lp.start>0.05){a=lp.start;b=lp.end}else{a=snapT(proj.cursor);b=a+4*barDur()}
+  const n=proj.regions.length+1;proj.regions.push({id:'r'+uid(),name:'Section '+n,start:a,end:b,color:SECT_COLORS[(n-1)%SECT_COLORS.length],exp:true});proj.regions.sort((x,y)=>x.start-y.start);dirty();save();renderDrawer()}
 function split(){const c=P.playing?nowSong():proj.cursor;let targets=[];const s=selItem();
   if(s&&c>s.it.pos+0.01&&c<s.it.pos+s.it.len-0.01)targets=[s];
   else for(const t of proj.tracks)for(const it of t.items)if(c>it.pos+0.01&&c<it.pos+it.len-0.01)targets.push({t,it});
@@ -675,6 +694,11 @@ async function readZip(ab){const v=new DataView(ab),u=new Uint8Array(ab);let e=-
     else if(method!==0)throw new Error('zip method '+method+' not supported');
     out[name]=data;p+=46+nl+xl+cl}return out}
 // iOS only allows the share sheet straight from a tap, so the file is built first, then offered on a button
+function deliverFiles(files){if(files.length===1)return deliver(files[0],files[0].name);const mb=(files.reduce((a,f)=>a+f.size,0)/1048576).toFixed(1);
+  openModal(`<h2>READY</h2><p class="note"><b>${files.length} WAVs</b> (${mb} MB): ${files.map(f=>esc(f.name)).join(', ')}</p><div class="grid2"><button id="dShare">SHARE / SAVE TO FILES</button><button id="dDl">DOWNLOAD ALL</button></div>
+  <p class="note">In the share sheet pick <b>Save to Files</b> and choose a Dropbox folder. All of them go in one go.</p>`);
+  const dl=()=>{files.forEach((f,k)=>setTimeout(()=>{const a=document.createElement('a');a.href=URL.createObjectURL(f);a.download=f.name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},60000)},k*700));toast('Downloading '+files.length+' files')};
+  $('#dShare').onclick=async()=>{if(navigator.canShare&&navigator.canShare({files})){try{await navigator.share({files,title:proj.name});closeModal();return}catch(e){if(e.name==='AbortError')return}}dl()};$('#dDl').onclick=dl;toast('Ready');return true}
 function deliver(blob,name){const file=new File([blob],name,{type:blob.type});const mb=(blob.size/1048576).toFixed(1);
   openModal(`<h2>READY</h2><p class="note"><b>${esc(name)}</b> (${mb} MB)</p><div class="grid2"><button id="dShare">SHARE / SAVE TO FILES</button><button id="dDl">DOWNLOAD</button></div>
   <p class="note">In the share sheet pick <b>Save to Files</b> and choose a Dropbox folder (for example Dropbox/REAPER/_SKETCHES). DOWNLOAD puts it in Files &gt; Downloads instead.</p>`);
@@ -684,7 +708,7 @@ function deliver(blob,name){const file=new File([blob],name,{type:blob.type});co
 
 function projectJson(){const used=new Set();proj.tracks.forEach(t=>t.items.forEach(i=>used.add(i.clip)));
   const clips={};for(const id of used)if(proj.clips[id])clips[id]=Object.assign({},proj.clips[id],{file:'audio/'+id+'.wav'});
-  return{format:'den-sketchpad',version:VERSION,name:proj.name,bpm:proj.bpm,bpb:proj.bpb,exported:new Date().toISOString(),loop:proj.loop,cursor:proj.cursor,master:proj.master,
+  return{format:'den-sketchpad',version:VERSION,name:proj.name,bpm:proj.bpm,bpb:proj.bpb,exported:new Date().toISOString(),loop:proj.loop,cursor:proj.cursor,master:proj.master,markers:proj.markers||[],regions:proj.regions||[],
     tracks:proj.tracks.map(t=>({name:t.name,color:t.color,vol:t.vol,pan:t.pan,mute:t.mute,solo:t.solo,input:t.input,fx:t.fx,
       items:t.items.slice().sort((a,b)=>a.pos-b.pos).map(i=>({name:i.name,clip:i.clip,file:'audio/'+i.clip+'.wav',pos:i.pos,len:i.len,offs:i.offs||0,fadeIn:i.fadeIn||0,fadeOut:i.fadeOut||0,gain:i.gain||0}))})),clips}}
 async function exportZip(withMix){toast('Building zip…',8000);await saveNow();const pj=projectJson();const files=[];
@@ -693,15 +717,28 @@ async function exportZip(withMix){toast('Building zip…',8000);await saveNow();
   if(withMix){const mb=await renderMix();if(mb){const chs=[mb.getChannelData(0),mb.getChannelData(1)];files.push({name:'mixdown.wav',data:wavEncode(chs,mb.sampleRate,24)})}}
   files.push({name:'README.txt',data:new TextEncoder().encode('Den Sketchpad project "'+proj.name+'"\nOpen in REAPER with the action: Den Sketchpad Import (pick this zip or project.json).\n')});
   const nm=safeName(proj.name)+'.sketch.zip';await deliver(makeZip(files),nm)}
-async function renderMix(){const end=projEnd();if(end<=0){toast('Nothing to mix');return null}
-  const sr=A.ctx?A.ctx.sampleRate:48000;const tail=proj.tracks.concat([MT()]).some(t=>t.fx.haze.on||t.fx.echo.on)?6:0.5;const len=Math.ceil((end+tail)*sr);
+// renders the master bus (all tracks + master FX + limiter) between from and to, plus the FX tail
+async function renderMix(from,to,label){from=from||0;const end=to!=null?to:projEnd();if(end-from<=0.01){toast('Nothing to mix');return null}
+  const sr=A.ctx?A.ctx.sampleRate:48000;const tail=proj.tracks.concat([MT()]).some(t=>t.fx.haze.on||t.fx.echo.on)?6:0.5;const len=Math.ceil((end-from+tail)*sr);
   const oc=new OfflineAudioContext(2,len,sr);const m=buildMaster(oc,oc.destination);applyMaster(m,oc,proj.master);
-  for(const t of proj.tracks){const n=buildChain(oc,t,m.in);for(const it of t.items)scheduleItem(oc,it,t,n.in,0,1e9,0,null)}
-  toast('Rendering mix…',20000);const b=await oc.startRendering();return b}
-async function exportMix(){const b=await renderMix();if(!b)return;const w=wavEncode([b.getChannelData(0),b.getChannelData(1)],b.sampleRate,24);await deliver(new Blob([w],{type:'audio/wav'}),safeName(proj.name)+'_mix.wav')}
+  for(const t of proj.tracks){const n=buildChain(oc,t,m.in);for(const it of t.items)scheduleItem(oc,it,t,n.in,from,end,0,null)}
+  toast('Rendering '+(label||'mix')+'…',30000);const b=await oc.startRendering();return b}
+async function exportMix(){return mixChooser()}
+function mixChooser(){const rs=proj.regions;if(!rs.length)return renderMixes([{name:'mix',start:0,end:null}]);
+  openModal(`<h2>EXPORT MIX</h2><p class="note">The master track: every track through the master FX and limiter. Pick what to bounce. Each one becomes its own WAV (24-bit) with the reverb/echo tail.</p>
+   <div class="plist" id="mxList"></div><div class="grid2" style="margin-top:12px"><button id="mxAll">ALL</button><button id="mxNone">NONE</button><div class="spacer"></div><button id="mxGo" style="background:#f2c14e">BOUNCE</button></div>`);
+  const L=$('#mxList');const opts=[{name:'Whole song',start:0,end:null,whole:true,exp:!rs.some(g=>g.exp)}].concat(rs);const sel=new Map(opts.map(o=>[o,!!o.exp]));
+  const draw=()=>{L.innerHTML='';for(const o of opts){const d=el('div','pitem'+(sel.get(o)?' cur':''),`<div><b>${esc(o.name)}</b><small>${o.whole?'0:00.0 – '+fmtTime(projEnd()):fmtTime(o.start)+' – '+fmtTime(o.end)}</small></div>`);
+    d.onclick=()=>{sel.set(o,!sel.get(o));if(!o.whole)o.exp=sel.get(o);draw()};L.appendChild(d)}};draw();
+  $('#mxAll').onclick=()=>{opts.forEach(o=>{sel.set(o,true);if(!o.whole)o.exp=true});draw()};$('#mxNone').onclick=()=>{opts.forEach(o=>{sel.set(o,false);if(!o.whole)o.exp=false});draw()};
+  $('#mxGo').onclick=()=>{const list=opts.filter(o=>sel.get(o));if(!list.length)return toast('Pick at least one');save();renderMixes(list)}}
+async function renderMixes(list){const files=[];let i=0;
+  for(const o of list){i++;const b=await renderMix(o.start,o.end,(list.length>1?i+'/'+list.length+' ':'')+o.name);if(!b)continue;
+    const w=wavEncode([b.getChannelData(0),b.getChannelData(1)],b.sampleRate,24);const nm=safeName(proj.name)+(o.whole||o.name==='mix'?'_mix':'_'+safeName(o.name))+'.wav';files.push(new File([w],nm,{type:'audio/wav'}))}
+  if(files.length)deliverFiles(files)}
 async function importZip(file){try{const z=await readZip(await file.arrayBuffer());const pjB=z['project.json']||Object.entries(z).find(([k])=>k.endsWith('project.json'))?.[1];
     if(!pjB)throw new Error('no project.json inside');const pj=JSON.parse(new TextDecoder().decode(pjB));const prefix=Object.keys(z).find(k=>k.endsWith('project.json')).replace('project.json','');
-    stopAll();const p=newProject(/from REAPER/.test(pj.name)?pj.name:pj.name+' (imported)');p.tracks=[];p.bpm=pj.bpm||90;p.bpb=pj.bpb||4;if(pj.loop)p.loop=pj.loop;if(pj.master)p.master=Object.assign({vol:0,limit:true},pj.master,{fx:Object.assign(defaultFx(),pj.master.fx||{})});
+    stopAll();const p=newProject(/from REAPER/.test(pj.name)?pj.name:pj.name+' (imported)');p.tracks=[];p.bpm=pj.bpm||90;p.bpb=pj.bpb||4;if(pj.loop)p.loop=pj.loop;p.markers=(pj.markers||[]).map(m=>({id:'m'+uid(),name:m.name||'',pos:+m.pos||0,color:m.color||'#f4ecdb'}));p.regions=(pj.regions||[]).map((g,k)=>({id:'r'+uid(),name:g.name||'',start:+g.start||0,end:+g.end||0,color:g.color||SECT_COLORS[k%SECT_COLORS.length],exp:!!g.exp}));if(pj.master)p.master=Object.assign({vol:0,limit:true},pj.master,{fx:Object.assign(defaultFx(),pj.master.fx||{})});
     proj=p;AUD.clear();const ctx=ensureCtx();const map={};
     for(const[id,c]of Object.entries(pj.clips||{})){const d=z[prefix+c.file];if(!d)continue;const buf=await decode(ctx,d.buffer.slice(d.byteOffset,d.byteOffset+d.byteLength));
       const chs=[];for(let k=0;k<buf.numberOfChannels;k++)chs.push(buf.getChannelData(k).slice());map[id]=await storeClip(c.name||id,chs,buf.sampleRate)}
@@ -769,7 +806,23 @@ let drawerTab=LS.get('tab','fx');
 function renderDrawer(){const b=$('#dbody');b.innerHTML='';masterMeter=null;proj.tracks.forEach(t=>t._fm=null);
   document.querySelectorAll('#dSeg button').forEach(x=>x.classList.toggle('on',x.dataset.v===drawerTab));
   const t=selTrack();$('#dTitle').textContent=drawerTab==='fx'?(t?t.name.toUpperCase():''):drawerTab==='item'?'':'';
-  if(drawerTab==='mix')drawMixTab(b);else if(drawerTab==='fx')renderFx(b,t);else renderItem(b)}
+  if(drawerTab==='mix')drawMixTab(b);else if(drawerTab==='fx')renderFx(b,t);else if(drawerTab==='sect')renderSections(b);else renderItem(b)}
+function renderSections(b){const box=el('div','itembox');
+  const a=el('div','card');a.innerHTML='<div class="tab">ADD</div>';const col=el('div','btncol');col.style.gridTemplateColumns='auto';
+  const am=el('button',null,'+ MARKER at cursor');am.onclick=addMarker;const ar=el('button',null,'+ REGION from loop');ar.onclick=addRegion;
+  const ex=el('button',null,'EXPORT MIX…');ex.style.background='#f2c14e';ex.onclick=mixChooser;[am,ar,ex].forEach(x=>col.appendChild(x));a.appendChild(col);box.appendChild(a);
+  const L=el('div','card');L.style.minWidth='420px';L.innerHTML='<div class="tab">SONG SECTIONS</div>';
+  if(!proj.regions.length&&!proj.markers.length)L.appendChild(el('div','note','No sections yet. Set a loop over a part and tap + REGION, or drop markers. Sections sent from REAPER show up here and on the ruler.'));
+  const list=el('div','plist');
+  const row=(s,isR)=>{const d=el('div','pitem');const sw=`<span style="width:14px;height:14px;border:2px solid #1c1a18;border-radius:4px;background:${s.color||'#f4ecdb'};flex:none"></span>`;
+    d.innerHTML=sw+`<div><b>${esc(s.name||'')}</b><small>${isR?fmtTime(s.start)+' – '+fmtTime(s.end):'marker · '+fmtTime(s.pos)}</small></div>`;
+    if(isR){const ck=el('button','lamp'+(s.exp?' on':''),'MIX');ck.title='Include in EXPORT MIX';ck.onclick=()=>{s.exp=!s.exp;ck.classList.toggle('on',s.exp);save()};d.appendChild(ck)}
+    const go=el('button',null,'GO');go.onclick=()=>gotoSection(isR?{region:s}:{marker:s},false);d.appendChild(go);
+    if(isR){const lo=el('button',null,'LOOP');lo.onclick=()=>gotoSection({region:s},true);d.appendChild(lo)}
+    const rn=el('button',null,'NAME');rn.onclick=()=>{const n=prompt('Name',s.name||'');if(n!=null){pushUndo();s.name=n;dirty();save();renderDrawer()}};d.appendChild(rn);
+    const dl=el('button',null,'✕');dl.onclick=()=>{pushUndo();const arr=isR?proj.regions:proj.markers;arr.splice(arr.indexOf(s),1);dirty();save();renderDrawer()};d.appendChild(dl);
+    d.querySelectorAll('button').forEach(x=>{x.style.height='32px';x.style.padding='0 8px';x.style.fontSize='11px'});list.appendChild(d)};
+  proj.regions.forEach(g=>row(g,true));proj.markers.forEach(m=>row(m,false));L.appendChild(list);box.appendChild(L);b.appendChild(box)}
 function drawMixTab(b){const row=el('div','cards');
   proj.tracks.forEach(t=>{const c=el('div','card strip'+(t.id===sel.track?' sel':''));c.innerHTML=`<div class="tab c" style="--tc:${t.color};color:#1c1a18">${String(proj.tracks.indexOf(t)+1).padStart(2,'0')}</div><div class="nm">${esc(t.name)}</div>`;
     const pk=Knob({label:'PAN',min:-100,max:100,value:t.pan,def:0,bipolar:true,color:t.color,fmt:v=>v===0?'C':(v<0?'L':'R')+Math.abs(Math.round(v)),onChange:(v,end)=>{t.pan=Math.round(v);applyTrack(t);if(end)save()}});
@@ -796,7 +849,8 @@ function renderFx(b,t){if(!t){b.appendChild(el('div','hint','Select a track.'));
     const lim=el('button','lamp'+(proj.master.limit?' on':''),'LIMIT');lim.onclick=()=>{proj.master.limit=!proj.master.limit;lim.classList.toggle('on',proj.master.limit);applyMaster(A.master,A.ctx,proj.master);renderHeads();dirty();save()};
     const rs=el('button',null,'RESET FX');rs.onclick=()=>{pushUndo();proj.master.fx=defaultFx();applyTrack(MT());renderDrawer();dirty();save()};
     const fd=Knob({label:'VOLUME',min:-24,max:12,value:proj.master.vol,def:0,bipolar:true,color:'#1c1a18',fmt:v=>(v>0?'+':'')+v.toFixed(1),onChange:(v,end)=>{proj.master.vol=Math.round(v*10)/10;applyMaster(A.master,A.ctx,proj.master);if(end)save()}});
-    [lim,rs].forEach(x=>col.appendChild(x));mc.appendChild(fd);mc.appendChild(col);row.appendChild(mc);b.appendChild(row);return}
+    const xm=el('button',null,'EXPORT MIX…');xm.onclick=mixChooser;
+    [lim,rs,xm].forEach(x=>col.appendChild(x));mc.appendChild(fd);mc.appendChild(col);row.appendChild(mc);b.appendChild(row);return}
   const tc=el('div','card');tc.innerHTML='<div class="tab">TRACK</div>';const col=el('div','btncol');col.style.gridTemplateColumns='auto';
   const rn=el('button',null,'RENAME');rn.onclick=()=>{const n=prompt('Track name',t.name);if(n){pushUndo();t.name=n;renderHeads();renderDrawer();save()}};
   const cl=el('button',null,'COLOUR');cl.onclick=()=>{t.color=COLORS[(COLORS.indexOf(t.color)+1)%COLORS.length];renderHeads();renderDrawer();dirty();save()};
@@ -822,7 +876,7 @@ $('#modal').addEventListener('pointerdown',e=>{if(e.target.id==='modal')closeMod
 async function projectMenu(){const all=(await DB.all('projects')).sort((a,b)=>b.modified-a.modified);
   const lat=Math.round(latency()*1000),man=LS.get('latency',null);
   openModal(`<h2>DEN SKETCHPAD <small style="font-weight:600;color:#7d7160">v${VERSION}</small></h2>
-  <h3>THIS PROJECT</h3><div class="grid2"><button id="pRen">RENAME</button><button id="pZip">SAVE ZIP (for REAPER)</button><button id="pZipM">ZIP + MIXDOWN</button><button id="pMix">MIXDOWN WAV</button></div>
+  <h3>THIS PROJECT</h3><div class="grid2"><button id="pRen">RENAME</button><button id="pZip">SAVE ZIP (for REAPER)</button><button id="pZipM">ZIP + MIXDOWN</button><button id="pMix" style="background:#f2c14e">EXPORT MIX…</button></div>
   <p class="note">SAVE ZIP opens the share sheet: pick <b>Save to Files</b>, then Dropbox (e.g. Dropbox/REAPER/_SKETCHES). At home, run <b>Den Sketchpad Import</b> in REAPER and pick the zip.</p>
   <h3>PROJECTS ON THIS IPAD</h3><div class="plist" id="pList"></div>
   <div class="grid2" style="margin-top:10px"><button id="pNew">NEW PROJECT</button><button id="pImp">OPEN A SKETCH ZIP</button><input id="zipIn" type="file" accept=".zip,application/zip" hidden></div>
@@ -843,7 +897,7 @@ async function deleteProject(id){const keys=await DB.keys('clips');for(const k o
   if(id===proj.id){const rest=await DB.all('projects');if(rest.length)await openProject(rest.sort((a,b)=>b.modified-a.modified)[0].id);else{const p=newProject();await DB.put('projects',p);openProjectObj(p)}}}
 async function openProject(id){const p=await DB.get('projects',id);if(!p)return false;await openProjectObj(p);return true}
 async function openProjectObj(p){if(proj)stopAll();for(const[id,n]of A.chains){try{n.vol.disconnect();n.eLfo.stop();n.hLfo.stop()}catch(e){}}A.chains.clear();
-  proj=p;proj.master=proj.master||{vol:0,limit:true};undoS=[];redoS=[];sel={track:proj.tracks[0]&&proj.tracks[0].id,item:null};view.scrollX=proj.scrollX||0;view.scrollY=0;
+  proj=p;proj.master=proj.master||{vol:0,limit:true};proj.markers=proj.markers||[];proj.regions=proj.regions||[];undoS=[];redoS=[];sel={track:proj.tracks[0]&&proj.tracks[0].id,item:null};view.scrollX=proj.scrollX||0;view.scrollY=0;
   await loadClips();syncEngine();renderHeads();renderDrawer();uiTransport();LS.set('last',proj.id);dirty()}
 
 /* ============================ top bar ============================ */
@@ -871,7 +925,7 @@ $('#tImport').onclick=()=>$('#fileIn').click();$('#fileIn').onchange=e=>{importF
 document.addEventListener('keydown',e=>{if(!proj||e.target.tagName==='INPUT'||e.target.tagName==='SELECT'||$('#modal').classList.contains('on'))return;
   const k=e.key.toLowerCase();if(k===' '){e.preventDefault();ensureCtx();play()}else if(k==='r'&&!e.metaKey){ensureCtx();record()}else if(k==='s'&&!e.metaKey){split()}
   else if(k==='delete'||k==='backspace'){delItem()}else if(k==='z'&&(e.metaKey||e.ctrlKey)){e.preventDefault();e.shiftKey?redo():undo()}else if(k==='d'&&(e.metaKey||e.ctrlKey)){e.preventDefault();duplicate()}
-  else if(k==='l'){$('#bLoop').click()}else if(k==='c'){$('#bClick').click()}else if(k==='home'||k==='enter'){home()}});
+  else if(k==='l'){$('#bLoop').click()}else if(k==='m'){addMarker()}else if(k==='c'){$('#bClick').click()}else if(k==='home'||k==='enter'){home()}});
 window.addEventListener('resize',resize);
 new ResizeObserver(resize).observe($('#lanes'));
 document.addEventListener('visibilitychange',()=>{if(document.hidden)saveNow()});
