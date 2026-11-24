@@ -199,7 +199,7 @@ input.txt{font:600 15px var(--sans);border:2px solid var(--ink);border-radius:7p
 <div id="toast"></div>
 <script>
 'use strict';
-const VERSION='0.1';
+const VERSION='0.1.1';
 /* ============================ helpers ============================ */
 const $=s=>document.querySelector(s);
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
@@ -688,7 +688,7 @@ async function renderMix(){const end=projEnd();if(end<=0){toast('Nothing to mix'
 async function exportMix(){const b=await renderMix();if(!b)return;const w=wavEncode([b.getChannelData(0),b.getChannelData(1)],b.sampleRate,24);await deliver(new Blob([w],{type:'audio/wav'}),safeName(proj.name)+'_mix.wav')}
 async function importZip(file){try{const z=await readZip(await file.arrayBuffer());const pjB=z['project.json']||Object.entries(z).find(([k])=>k.endsWith('project.json'))?.[1];
     if(!pjB)throw new Error('no project.json inside');const pj=JSON.parse(new TextDecoder().decode(pjB));const prefix=Object.keys(z).find(k=>k.endsWith('project.json')).replace('project.json','');
-    stopAll();const p=newProject(pj.name+' (imported)');p.tracks=[];p.bpm=pj.bpm||90;p.bpb=pj.bpb||4;if(pj.loop)p.loop=pj.loop;if(pj.master)p.master=pj.master;
+    stopAll();const p=newProject(/from REAPER/.test(pj.name)?pj.name:pj.name+' (imported)');p.tracks=[];p.bpm=pj.bpm||90;p.bpb=pj.bpb||4;if(pj.loop)p.loop=pj.loop;if(pj.master)p.master=pj.master;
     proj=p;AUD.clear();const ctx=ensureCtx();const map={};
     for(const[id,c]of Object.entries(pj.clips||{})){const d=z[prefix+c.file];if(!d)continue;const buf=await decode(ctx,d.buffer.slice(d.byteOffset,d.byteOffset+d.byteLength));
       const chs=[];for(let k=0;k<buf.numberOfChannels;k++)chs.push(buf.getChannelData(k).slice());map[id]=await storeClip(c.name||id,chs,buf.sampleRate)}
