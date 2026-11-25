@@ -189,6 +189,7 @@ canvas.roll{width:100%;height:230px;display:block;border-radius:6px;touch-action
   <button id="tRedo">REDO</button>
   <span class="tlabel">ZOOM</span>
   <button id="tZo">−</button><button id="tZi">+</button><button id="tFit">FIT</button>
+  <button id="tRegion" title="Make a region from the time selection (drag along the ruler)">+ REGION</button>
   <button id="tImport">IMPORT AUDIO</button>
   <input id="fileIn" type="file" accept="audio/*,.wav,.aif,.aiff,.mp3,.m4a,.caf,.flac,.mid,.midi,audio/midi,audio/x-midi" multiple hidden>
 </div>
@@ -209,7 +210,7 @@ canvas.roll{width:100%;height:230px;display:block;border-radius:6px;touch-action
 <div id="toast"></div>
 <script>
 'use strict';
-const VERSION='0.5';
+const VERSION='0.5.1';
 /* ============================ helpers ============================ */
 const $=s=>document.querySelector(s);
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
@@ -798,8 +799,9 @@ function gotoSection(s,loop){const g=s.region,m=s.marker;const pos=g?g.start:m.p
   proj.cursor=pos;if(view.scrollX>pos||tX(pos)>view.w*0.8)view.scrollX=Math.max(0,pos-1);
   if(P.playing&&!P.recording)startPlayback(pos,0);uiTransport();dirty();save();toast((g?g.name:m.name)||'Section')}
 function addMarker(){pushUndo();const n=proj.markers.length+1;proj.markers.push({id:'m'+uid(),name:'Marker '+n,pos:P.playing?nowSong():proj.cursor,color:'#f4ecdb'});proj.markers.sort((a,b)=>a.pos-b.pos);dirty();save();renderDrawer()}
-function addRegion(){pushUndo();let a,b;const lp=proj.loop;if(lp.end-lp.start>0.05){a=lp.start;b=lp.end}else{a=snapT(proj.cursor);b=a+4*barDur()}
-  const n=proj.regions.length+1;proj.regions.push({id:'r'+uid(),name:'Section '+n,start:a,end:b,color:SECT_COLORS[(n-1)%SECT_COLORS.length],exp:true});proj.regions.sort((x,y)=>x.start-y.start);dirty();save();renderDrawer()}
+function addRegion(){const lp=proj.loop;if(!(lp.end-lp.start>0.05))return toast('Drag along the ruler first to make a time selection',3500);
+  const a=lp.start,b=lp.end,n=proj.regions.length+1;const nm=prompt('Region name','Section '+n);if(nm==null)return;pushUndo();
+  proj.regions.push({id:'r'+uid(),name:nm||('Section '+n),start:a,end:b,color:SECT_COLORS[(n-1)%SECT_COLORS.length],exp:true});toast('Region "'+(nm||('Section '+n))+'" '+fmtTime(a)+' – '+fmtTime(b));proj.regions.sort((x,y)=>x.start-y.start);dirty();save();renderDrawer()}
 function split(){const c=P.playing?nowSong():proj.cursor;let targets=[];const s=selItem();
   if(s&&c>s.it.pos+0.01&&c<s.it.pos+s.it.len-0.01)targets=[s];
   else for(const t of proj.tracks)for(const it of t.items)if(c>it.pos+0.01&&c<it.pos+it.len-0.01)targets.push({t,it});
@@ -1159,7 +1161,7 @@ function renderDrawer(){const b=$('#dbody');b.innerHTML='';masterMeter=null;grmR
   if(drawerTab==='mix')drawMixTab(b);else if(drawerTab==='fx')renderFx(b,t);else if(drawerTab==='sect')renderSections(b);else if(drawerTab==='keys')renderKeys(b);else renderItem(b)}
 function renderSections(b){const box=el('div','itembox');
   const a=el('div','card');a.innerHTML='<div class="tab">ADD</div>';const col=el('div','btncol');col.style.gridTemplateColumns='auto';
-  const am=el('button',null,'+ MARKER at cursor');am.onclick=addMarker;const ar=el('button',null,'+ REGION from loop');ar.onclick=addRegion;
+  const am=el('button',null,'+ MARKER at cursor');am.onclick=addMarker;const ar=el('button',null,'+ REGION from time selection');ar.onclick=addRegion;
   const ex=el('button',null,'EXPORT MIX…');ex.style.background='#f2c14e';ex.onclick=mixChooser;[am,ar,ex].forEach(x=>col.appendChild(x));a.appendChild(col);box.appendChild(a);
   const L=el('div','card');L.style.minWidth='420px';L.innerHTML='<div class="tab">SONG SECTIONS</div>';
   if(!proj.regions.length&&!proj.markers.length)L.appendChild(el('div','note','No sections yet. Set a loop over a part and tap + REGION, or drop markers. Sections sent from REAPER show up here and on the ruler.'));
@@ -1285,7 +1287,7 @@ document.querySelectorAll('#dSeg button').forEach(b=>b.onclick=()=>{drawerTab=b.
 $('#dToggle').onclick=()=>{const d=$('#drawer');d.classList.toggle('closed');$('#dToggle').textContent=d.classList.contains('closed')?'SHOW':'HIDE';LS.set('drawer',d.classList.contains('closed'));setTimeout(resize,200)};
 $('#tSplit').onclick=split;$('#tDup').onclick=duplicate;$('#tDel').onclick=delItem;$('#tUndo').onclick=undo;$('#tRedo').onclick=redo;
 $('#tZi').onclick=()=>zoomBy(1.5);$('#tZo').onclick=()=>zoomBy(1/1.5);$('#tFit').onclick=zoomFit;
-$('#tImport').onclick=()=>$('#fileIn').click();$('#fileIn').onchange=e=>{importFiles([...e.target.files]);e.target.value=''};
+$('#tRegion').onclick=addRegion;$('#tImport').onclick=()=>$('#fileIn').click();$('#fileIn').onchange=e=>{importFiles([...e.target.files]);e.target.value=''};
 document.addEventListener('keydown',e=>{if(!proj||e.target.tagName==='INPUT'||e.target.tagName==='SELECT'||$('#modal').classList.contains('on'))return;
   if(keysKeydown(e))return;const k=e.key.toLowerCase();if(k===' '){e.preventDefault();ensureCtx();play()}else if(k==='r'&&!e.metaKey){ensureCtx();record()}else if(k==='s'&&!e.metaKey){split()}
   else if(k==='delete'||k==='backspace'){delItem()}else if(k==='z'&&(e.metaKey||e.ctrlKey)){e.preventDefault();e.shiftKey?redo():undo()}else if(k==='d'&&(e.metaKey||e.ctrlKey)){e.preventDefault();duplicate()}
