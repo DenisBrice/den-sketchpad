@@ -210,7 +210,7 @@ canvas.roll{width:100%;height:230px;display:block;border-radius:6px;touch-action
 <div id="toast"></div>
 <script>
 'use strict';
-const VERSION='0.5.2';
+const VERSION='0.5.3';
 /* ============================ helpers ============================ */
 const $=s=>document.querySelector(s);
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
@@ -933,6 +933,10 @@ async function renderMixes(list){const files=[];let i=0;
   for(const o of list){i++;const b=await renderMix(o.start,o.end,(list.length>1?i+'/'+list.length+' ':'')+o.name);if(!b)continue;
     const w=wavEncode([b.getChannelData(0),b.getChannelData(1)],b.sampleRate,24);const nm=safeName(proj.name)+(o.whole||o.name==='mix'?'_mix':'_'+safeName(o.name))+'.wav';files.push(new File([w],nm,{type:'audio/wav'}))}
   if(files.length)deliverFiles(files)}
+// several zips in one go: each becomes its own project (one at a time, so memory stays low)
+async function importZips(files){files=files.filter(f=>/\.zip$/i.test(f.name));if(!files.length)return;let ok=0;
+  for(let i=0;i<files.length;i++){toast('Opening '+(i+1)+' of '+files.length+': '+files[i].name,60000);if(await importZip(files[i]))ok++}
+  if(files.length>1)toast(ok+' of '+files.length+' sketches imported. They are all in PROJECT.',6000)}
 async function importZip(file){try{const z=await readZip(await file.arrayBuffer());const pjB=z['project.json']||Object.entries(z).find(([k])=>k.endsWith('project.json'))?.[1];
     if(!pjB)throw new Error('no project.json inside');const pj=JSON.parse(new TextDecoder().decode(pjB));const prefix=Object.keys(z).find(k=>k.endsWith('project.json')).replace('project.json','');
     stopAll();const p=newProject(/from REAPER/.test(pj.name)?pj.name:pj.name+' (imported)');p.tracks=[];p.bpm=pj.bpm||90;p.bpb=pj.bpb||4;if(pj.loop)p.loop=pj.loop;p.markers=(pj.markers||[]).map(m=>({id:'m'+uid(),name:m.name||'',pos:+m.pos||0,color:m.color||'#f4ecdb'}));p.regions=(pj.regions||[]).map((g,k)=>({id:'r'+uid(),name:g.name||'',start:+g.start||0,end:+g.end||0,color:g.color||SECT_COLORS[k%SECT_COLORS.length],exp:!!g.exp}));if(pj.master)p.master=Object.assign({vol:0,limit:true},pj.master,{fx:Object.assign(defaultFx(),pj.master.fx||{})});
@@ -942,7 +946,7 @@ async function importZip(file){try{const z=await readZip(await file.arrayBuffer(
     pj.tracks.forEach((t,i)=>{const nt=newTrack(i);Object.assign(nt,{name:t.name,color:t.color||nt.color,vol:t.vol||0,pan:t.pan||0,mute:!!t.mute,solo:!!t.solo,input:t.input||'1'});
       if(t.fx)nt.fx=Object.assign(defaultFx(),t.fx);if(t.kind==='midi'){nt.kind='midi';nt.arm=false;nt.inst=Object.assign(defaultInst(t.inst&&t.inst.type),t.inst||{})}
       nt.items=(t.items||[]).filter(it=>it.notes?nt.kind==='midi':map[it.clip]).map(it=>it.notes?{id:'i'+uid(),midi:true,notes:it.notes.map(n=>({t:+n.t||0,d:+n.d||0.1,p:n.p|0,v:n.v|0||96})),name:it.name,pos:it.pos,len:it.len,offs:it.offs||0,fadeIn:0,fadeOut:0,gain:it.gain||0}:{id:'i'+uid(),clip:map[it.clip],name:it.name,pos:it.pos,len:it.len,offs:it.offs||0,fadeIn:it.fadeIn||0,fadeOut:it.fadeOut||0,gain:it.gain||0});p.tracks.push(nt)});
-    if(!p.tracks.length)p.tracks.push(newTrack(0));await saveNow();openProjectObj(p);closeModal();toast('Imported '+p.name)}
+    if(!p.tracks.length)p.tracks.push(newTrack(0));await saveNow();await openProjectObj(p);closeModal();toast('Imported '+p.name);return true}
   catch(e){console.error(e);toast('Import failed: '+e.message,5000)}}
 
 /* ============================ MIDI: instruments, keys, notes ============================ */
@@ -1268,7 +1272,7 @@ async function projectMenu(){const all=(await DB.all('projects')).sort((a,b)=>b.
   <h3>THIS PROJECT</h3><div class="grid2"><button id="pRen">RENAME</button><button id="pZip">SAVE ZIP (for REAPER)</button><button id="pZipM">ZIP + MIXDOWN</button><button id="pMix" style="background:#f2c14e">EXPORT MIX…</button></div>
   <p class="note">SAVE ZIP opens the share sheet: pick <b>Save to Files</b>, then Dropbox (e.g. Dropbox/REAPER/_SKETCHES). At home, run <b>Den Sketchpad Import</b> in REAPER and pick the zip.</p>
   <h3>PROJECTS ON THIS IPAD</h3><div class="plist" id="pList"></div>
-  <div class="grid2" style="margin-top:10px"><button id="pNew">NEW PROJECT</button><button id="pImp">OPEN A SKETCH ZIP</button><input id="zipIn" type="file" accept=".zip,application/zip" hidden></div>
+  <div class="grid2" style="margin-top:10px"><button id="pNew">NEW PROJECT</button><button id="pImp">OPEN SKETCH ZIPS</button><input id="zipIn" type="file" accept=".zip,application/zip" multiple hidden></div>
   <h3>SETTINGS</h3>
   <div class="grid2" style="align-items:center"><span class="note">Recording latency fix (ms):</span><input id="sLat" class="txt" style="width:90px" inputmode="numeric" value="${man!=null?man:''}" placeholder="${lat}"><span class="note">blank = auto (${lat} ms). Raise it if recordings land late, lower if early.</span></div>
   <div class="grid2" style="align-items:center;margin-top:8px"><span class="note">Click volume:</span><input id="sClk" type="range" min="0" max="1" step="0.05" value="${LS.get('clickVol',0.35)}"></div>
@@ -1279,7 +1283,7 @@ async function projectMenu(){const all=(await DB.all('projects')).sort((a,b)=>b.
   $('#pRen').onclick=()=>{const n=prompt('Project name',proj.name);if(n){proj.name=n;uiTransport();save();projectMenu()}};
   $('#pZip').onclick=()=>exportZip(false);$('#pZipM').onclick=()=>exportZip(true);$('#pMix').onclick=exportMix;
   $('#pNew').onclick=async()=>{await saveNow();const p=newProject();await DB.put('projects',p);closeModal();openProjectObj(p)};
-  $('#pImp').onclick=()=>$('#zipIn').click();$('#zipIn').onchange=e=>{if(e.target.files[0])importZip(e.target.files[0])};
+  $('#pImp').onclick=()=>$('#zipIn').click();$('#zipIn').onchange=e=>{const fs=[...e.target.files];e.target.value='';importZips(fs)};
   $('#sLat').onchange=e=>{const v=e.target.value.trim();LS.set('latency',v===''?null:clamp(parseFloat(v)||0,-200,500))};
   $('#sClk').oninput=e=>LS.set('clickVol',parseFloat(e.target.value))}
 async function deleteProject(id){const keys=await DB.keys('clips');for(const k of keys){const c=await DB.get('clips',k);if(c&&c.projectId===id)await DB.del('clips',k)}await DB.del('projects',id);
