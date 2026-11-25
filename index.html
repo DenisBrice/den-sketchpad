@@ -210,7 +210,7 @@ canvas.roll{width:100%;height:230px;display:block;border-radius:6px;touch-action
 <div id="toast"></div>
 <script>
 'use strict';
-const VERSION='0.5.1';
+const VERSION='0.5.2';
 /* ============================ helpers ============================ */
 const $=s=>document.querySelector(s);
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
@@ -591,6 +591,27 @@ process(inp){const i=inp[0];if(i&&i.length){const L=i[0],R=i[1]||i[0];
   this.b[0].set(L,this.n);this.b[1].set(R,this.n);this.n+=L.length;if(this.n+128>16384)this.flush()}}return true}}
 registerProcessor('den-rec',DenRec);`;
 let inPeak=0;
+/* PRINT: record what a track sounds like right now (its FX too, e.g. a frozen BLOOM cloud) to a new audio track */
+const PRINT={t:null,node:null,chunks:[],startSong:0,startCtx:0,timer:0,btn:null};
+async function recWorklet(ctx){if(ctx._denrec)return true;try{const url=URL.createObjectURL(new Blob([WORKLET],{type:'application/javascript'}));await ctx.audioWorklet.addModule(url);ctx._denrec=true}catch(e){console.warn(e);ctx._denrec=false}return ctx._denrec}
+async function printToggle(t){if(PRINT.t)return printStop();const ctx=ensureCtx();const n=t.isMaster?null:A.chains.get(t.id);if(!n)return toast('Print works on tracks');
+  if(proj.tracks.length>=16)return toast('16 tracks max: delete one first');if(!await recWorklet(ctx))return toast('Printing is not supported in this browser');
+  const node=new AudioWorkletNode(ctx,'den-rec',{numberOfInputs:1,numberOfOutputs:1,channelCount:2,channelCountMode:'explicit'});const mute=ctx.createGain();mute.gain.value=0;
+  n.sum.connect(node);node.connect(mute);mute.connect(ctx.destination);PRINT.chunks=[];node.port.onmessage=e=>{if(e.data.ch)PRINT.chunks.push(e.data)};
+  Object.assign(PRINT,{t,node,mute,n,startSong:P.playing?nowSong():proj.cursor,startCtx:ctx.currentTime,playing:P.playing});node.port.postMessage({on:true});
+  PRINT.timer=setInterval(()=>{const sec=ctx.currentTime-PRINT.startCtx;if(PRINT.btn&&PRINT.btn.isConnected)PRINT.btn.textContent='STOP PRINT '+fmtTime(sec).replace(/\.\d$/,'');if(sec>600)printStop()},250);
+  toast('Printing '+t.name+'… tap STOP PRINT when you have enough',3500);renderDrawer()}
+async function printStop(){const p=PRINT;if(!p.t)return;clearInterval(p.timer);p.node.port.postMessage({on:false});await new Promise(r=>setTimeout(r,200));
+  try{p.n.sum.disconnect(p.node)}catch(e){}try{p.node.disconnect();p.mute.disconnect()}catch(e){}
+  const t=p.t;PRINT.t=null;PRINT.node=null;const ch=p.chunks;p.chunks=[];if(!ch.length){toast('Nothing printed');renderDrawer();return}
+  const sr=A.ctx.sampleRate,t0=ch[0].t;let total=0;for(const c of ch)total=Math.max(total,Math.round((c.t-t0)*sr)+c.ch[0].length);
+  if(total<sr*0.3){toast('Print too short');renderDrawer();return}
+  const L=new Float32Array(total),Rr=new Float32Array(total);for(const c of ch){const o=Math.round((c.t-t0)*sr);L.set(c.ch[0],o);Rr.set(c.ch[1],o)}
+  pushUndo();const name=t.name+' print';const id=await storeClip(name,[L,Rr],sr);
+  const nt=newTrack(proj.tracks.length);nt.name=name;nt.color=t.color;nt.arm=false;proj.tracks.splice(proj.tracks.indexOf(t)+1,0,nt);
+  const pos=Math.max(0,p.startSong+(p.playing?(t0-p.startCtx):0));
+  nt.items.push({id:'i'+uid(),clip:id,name,pos,len:total/sr,offs:0,fadeIn:0.02,fadeOut:Math.min(1,total/sr/4),gain:0});
+  sel.track=nt.id;sel.item=nt.items[0].id;syncEngine();renderHeads();renderDrawer();dirty();save();toast('Printed '+fmtTime(total/sr)+' to "'+name+'" (no FX on it). Mute or unfreeze the original to hear the print alone.',5000)}
 function audioSession(t){try{if(navigator.audioSession)navigator.audioSession.type=t}catch(e){}}
 async function openInput(){if(A.input)return true;audioSession('play-and-record');const ctx=ensureCtx();
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){toast('No microphone access here (needs https)',4000);return false}
@@ -1203,7 +1224,9 @@ function renderFx(b,t){if(!t){b.appendChild(el('div','hint','Select a track.'));
   row.appendChild(fxCard(t,'echo','ECHO','#f2c14e',[{key:'time',label:'TIME',min:0,max:5,def:3,steps:true,fmt:v=>ECHO_STEPS[Math.round(v)][0]},{key:'fb',label:'REPEATS',min:0,max:100,def:35,fmt:pc},{key:'tone',label:'TONE',min:0,max:100,def:45,fmt:pc},{key:'mix',label:'MIX',min:0,max:100,def:25,fmt:pc}]));
   row.appendChild(fxCard(t,'haze','HAZE','#2a9d8f',[{key:'size',label:'SIZE',min:0,max:100,def:55,fmt:v=>(1.2+v/100*8.8).toFixed(1)+'s'},{key:'tone',label:'TONE',min:0,max:100,def:45,fmt:pc},{key:'motion',label:'MOTION',min:0,max:100,def:40,fmt:pc},{key:'mix',label:'MIX',min:0,max:100,def:35,fmt:pc}]));
   const blc=fxCard(t,'bloom','BLOOM','#c792ea',[{key:'size',label:'SIZE',min:0,max:100,def:60,fmt:pc},{key:'decay',label:'DECAY',min:0,max:100,def:45,fmt:v=>{const s=0.8*Math.pow(75,v/100);return s<10?s.toFixed(1)+'s':Math.round(s)+'s'}},{key:'shimmer',label:'SHIMMER',min:0,max:100,def:0,fmt:pc},{key:'motion',label:'MOTION',min:0,max:100,def:0,fmt:pc},{key:'mix',label:'MIX',min:0,max:100,def:35,fmt:pc}]);
-  const frz=el('button','lamp'+(t.fx.bloom.freeze?' on':''),'FREEZE');frz.style.cssText='height:30px;font-size:10px;padding:0 10px;margin-top:8px;--lampc:#c792ea';frz.onclick=()=>{const b=t.fx.bloom;b.freeze=!b.freeze;if(b.freeze&&!b.on){b.on=true;blc.classList.remove('off');blc.querySelector('.sw').classList.add('on')}frz.classList.toggle('on',b.freeze);applyTrack(t);dirty();save()};blc.appendChild(frz);
+  const pr=el('button',PRINT.t===t?'on':null,PRINT.t===t?'STOP PRINT':'PRINT');pr.style.cssText='height:30px;font-size:10px;padding:0 10px;margin:8px 0 0 8px'+(PRINT.t===t?';background:#d7263d;color:#f4ecdb':'');pr.title='Record what this track sounds like now (BLOOM, freeze and all) to a new audio track';
+  pr.onclick=()=>printToggle(t);if(PRINT.t===t)PRINT.btn=pr;
+  const frz=el('button','lamp'+(t.fx.bloom.freeze?' on':''),'FREEZE');frz.style.cssText='height:30px;font-size:10px;padding:0 10px;margin-top:8px;--lampc:#c792ea';frz.onclick=()=>{const b=t.fx.bloom;b.freeze=!b.freeze;if(b.freeze&&!b.on){b.on=true;blc.classList.remove('off');blc.querySelector('.sw').classList.add('on')}frz.classList.toggle('on',b.freeze);applyTrack(t);dirty();save()};blc.appendChild(frz);if(!t.isMaster)blc.appendChild(pr);
   if(A.ctx&&A.ctx._denfx===false){const w=el('div','hint','This browser can\'t run DEN COMP / BLOOM.');w.style.fontSize='11px';blc.appendChild(w)}
   row.appendChild(blc);
   if(t.isMaster){const mc=el('div','card');mc.style.background='#f2c14e';mc.innerHTML='<div class="tab">MASTER</div>';const col=el('div','btncol');col.style.gridTemplateColumns='auto';
@@ -1262,7 +1285,7 @@ async function projectMenu(){const all=(await DB.all('projects')).sort((a,b)=>b.
 async function deleteProject(id){const keys=await DB.keys('clips');for(const k of keys){const c=await DB.get('clips',k);if(c&&c.projectId===id)await DB.del('clips',k)}await DB.del('projects',id);
   if(id===proj.id){const rest=await DB.all('projects');if(rest.length)await openProject(rest.sort((a,b)=>b.modified-a.modified)[0].id);else{const p=newProject();await DB.put('projects',p);openProjectObj(p)}}}
 async function openProject(id){const p=await DB.get('projects',id);if(!p)return false;await openProjectObj(p);return true}
-async function openProjectObj(p){if(proj)stopAll();for(const[id,n]of A.chains){killChain(n);}A.chains.clear();
+async function openProjectObj(p){if(PRINT.t)await printStop();if(proj)stopAll();for(const[id,n]of A.chains){killChain(n);}A.chains.clear();
   proj=p;proj.master=proj.master||{vol:0,limit:true};for(const t of proj.tracks){t.fx=fillFx(t.fx||defaultFx());if(isMidi(t))t.inst=Object.assign(defaultInst(t.inst&&t.inst.type),t.inst||{})}proj.markers=proj.markers||[];proj.regions=proj.regions||[];undoS=[];redoS=[];sel={track:proj.tracks[0]&&proj.tracks[0].id,item:null};view.scrollX=proj.scrollX||0;view.scrollY=0;
   await loadClips();syncEngine();renderHeads();renderDrawer();uiTransport();LS.set('last',proj.id);dirty()}
 
